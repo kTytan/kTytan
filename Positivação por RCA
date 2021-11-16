@@ -1,0 +1,273 @@
+SELECT PCUSUARI.CODUSUR,
+       PCUSUARI.NOME,
+       nvl(CLI_CADASTRADOS.QT, 0) QTCLI,
+       nvl(CLI_ATIVOS.QT, 0) AS QTCLIATIV,
+       nvl(TOTAIS_VENDAS.QTCLI, 0) QTCLIENTES,
+       nvl(TOTAIS_VENDAS.QTPED, 0) QTNOTAS,
+       nvl(TOTAIS_VENDAS.QTPROD, 0) QTITENS,
+       nvl(TOTAIS_VENDAS.QTPRODN, 0) NUMITENS,
+       nvl(SUM(VLVENDA), 0) VLVENDA,
+       nvl(SUM(VLTABELA), 0) VLTABELA,
+       nvl(SUM(VLCUSTOFIN), 0) VLCUSTOFIN,
+       nvl(SUM(VLBONIF), 0) VLBONIF,
+       nvl(SUM(NUMDIAS), 0) NUMDIAS,
+       nvl(MAX(VLMETA), 0) VLMETA,
+       nvl(SUM(VLDEVOLUCAO), 0) VLDEVOLUCAO
+  FROM PCUSUARI,
+       (SELECT CLIENTES.CODUSUR, COUNT(DISTINCT(CLIENTES.CODCLI)) QT
+          FROM (SELECT C.CODUSUR1 CODUSUR, C.CODCLI
+                  FROM PCCLIENT C, PCUSUARI U
+                  WHERE 1 = 1
+                  AND C.CODUSUR1 = U.CODUSUR
+                  UNION
+                  SELECT C.CODUSUR2 CODUSUR, C.CODCLI
+                  FROM PCCLIENT C, PCUSUARI U
+                  WHERE 1 = 1
+                  AND C.CODUSUR2 = U.CODUSUR
+                  UNION
+                  SELECT PCUSURCLI.CODUSUR, C.CODCLI
+                  FROM PCCLIENT C, PCUSURCLI, PCUSUARI U
+                  WHERE C.CODCLI = PCUSURCLI.CODCLI
+                  AND PCUSURCLI.CODUSUR = U.CODUSUR
+                  AND 1 = 1) CLIENTES
+                  GROUP BY CLIENTES.CODUSUR) CLI_CADASTRADOS,
+       (SELECT CLIENTES.CODUSUR, COUNT(DISTINCT(CLIENTES.CODCLI)) QT
+                  FROM (SELECT PCCLIENT.CODUSUR1 CODUSUR, PCCLIENT.CODCLI
+                  FROM PCCLIENT
+                  WHERE 1 = 1
+                  AND (PCCLIENT.DTULTCOMP >= TRUNC(SYSDATE - 365))
+                  UNION
+                  SELECT PCCLIENT.CODUSUR2 CODUSUR, PCCLIENT.CODCLI
+                  FROM PCCLIENT
+                  WHERE 1 = 1
+                  AND (PCCLIENT.DTULTCOMP >= TRUNC(SYSDATE - 365))
+                  UNION
+                  SELECT PCUSURCLI.CODUSUR, PCCLIENT.CODCLI
+                  FROM PCCLIENT, PCUSURCLI
+                  WHERE PCCLIENT.CODCLI = PCUSURCLI.CODCLI
+                  AND 1 = 1
+                  AND (PCCLIENT.DTULTCOMP >= TRUNC(SYSDATE - 365))
+                  AND (1 = 1)) CLIENTES
+                  GROUP BY CLIENTES.CODUSUR) CLI_ATIVOS,
+       (SELECT PCPEDC.CODUSUR CODUSUR,
+               COUNT(DISTINCT(PCPEDI.CODPROD)) QTPROD,
+               COUNT(PCPEDI.CODPROD) QTPRODN,
+               SUM(PCPEDI.QT) TOTQTPROD,
+               COUNT(DISTINCT(PCPEDC.NUMPED)) QTPED,
+               COUNT(DISTINCT(PCPEDC.CODCLI)) QTCLI
+               FROM PCPEDI, PCPEDC, PCCLIENT C
+               WHERE PCPEDI.NUMPED = PCPEDC.NUMPED
+               AND PCPEDC.DATA BETWEEN &DTINI AND &DTFIM 
+               AND PCPEDC.DTCANCEL IS NULL
+               AND PCPEDC.CONDVENDA NOT IN (4, 8, 10, 13, 20, 98, 99)
+               AND PCPEDC.CODCLI = C.CODCLI
+               AND PCPEDC.CODFILIAL = 1
+               AND PCPEDC.CODSUPERVISOR IN (&CODSUPERVISOR)
+               GROUP BY PCPEDC.CODUSUR) TOTAIS_VENDAS,
+       (SELECT VENDAS.CODSUPERVISOR,
+               U.CODUSUR,
+               U.NOME,
+               NVL(VENDAS.VLVENDA, 0) VLVENDA,
+               NVL(VENDAS.VLTABELA, 0) VLTABELA,
+               NVL(VENDAS.VLBONIF, 0) VLBONIF,
+               NVL(VENDAS.VLCUSTOFIN, 0) VLCUSTOFIN,
+               0 VLLUCRO,
+               NVL(VENDAS.NUMDIAS, 0) NUMDIAS,
+               NVL(METAS.VLMETA, 0) VLMETA,
+               NVL(VENDAS.VLDEVOLUCAO, 0) VLDEVOLUCAO
+          FROM PCUSUARI U,
+               (SELECT PCPEDC.CODUSUR CODUSUR,
+                       PCPEDC.CODSUPERVISOR CODSUPERVISOR,
+                       SUM(ROUND(DECODE(PCPEDC.CONDVENDA,
+                                        5,
+                                        0,
+                                        6,
+                                        0,
+                                        11,
+                                        0,
+                                        12,
+                                        0,
+                                        1,
+                                        DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                               'F',
+                                               0,
+                                               (NVL(PCPEDI.pvenda, 0) +
+                                               nvl(pcpedi.vloutrasdesp, 0) +
+                                               nvl(pcpedi.vlfrete, 0)) *
+                                               NVL(PCPEDI.QT, 0)),
+                                        14,
+                                        DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                               'F',
+                                               0,
+                                               (NVL(PCPEDI.pvenda, 0) +
+                                               nvl(pcpedi.vloutrasdesp, 0) +
+                                               nvl(pcpedi.vlfrete, 0)) *
+                                               NVL(PCPEDI.QT, 0)),
+                                        (NVL(PCPEDI.pvenda, 0) +
+                                        nvl(pcpedi.vloutrasdesp, 0) +
+                                        nvl(pcpedi.vlfrete, 0)) *
+                                        NVL(PCPEDI.QT, 0)),
+                                 2)) VLVENDA,
+                       round(SUM((DECODE(PCPEDC.CONDVENDA,
+                                         5,
+                                         0,
+                                         6,
+                                         0,
+                                         11,
+                                         0,
+                                         12,
+                                         0,
+                                         1,
+                                         DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                                'F',
+                                                0,
+                                                NVL(PCPEDI.PTABELA, 0) *
+                                                NVL(PCPEDI.QT, 0)),
+                                         14,
+                                         DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                                'F',
+                                                0,
+                                                NVL(PCPEDI.PTABELA, 0) *
+                                                NVL(PCPEDI.QT, 0)),
+                                         NVL(PCPEDI.PTABELA, 0) *
+                                         NVL(PCPEDI.QT, 0)))),
+                             2) VLTABELA,
+                       SUM(ROUND(DECODE(PCPEDC.CONDVENDA,
+                                        5,
+                                        (NVL(PCPEDI.pvenda, 0) +
+                                        nvl(pcpedi.vloutrasdesp, 0) +
+                                        nvl(pcpedi.vlfrete, 0)) *
+                                        NVL(PCPEDI.QT, 0),
+                                        1,
+                                        DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                               'F',
+                                               (NVL(PCPEDI.pbonific, 0) +
+                                               nvl(pcpedi.vloutrasdesp, 0) +
+                                               nvl(pcpedi.vlfrete, 0)) *
+                                               NVL(PCPEDI.QT, 0),
+                                               0),
+                                        14,
+                                        DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                               'F',
+                                               (NVL(PCPEDI.pbonific, 0) +
+                                               nvl(pcpedi.vloutrasdesp, 0) +
+                                               nvl(pcpedi.vlfrete, 0)) *
+                                               NVL(PCPEDI.QT, 0),
+                                               0),
+                                        6,
+                                        (NVL(PCPEDI.pvenda, 0) +
+                                        nvl(pcpedi.vloutrasdesp, 0) +
+                                        nvl(pcpedi.vlfrete, 0)) *
+                                        NVL(PCPEDI.QT, 0),
+                                        11,
+                                        (NVL(PCPEDI.pvenda, 0) +
+                                        nvl(pcpedi.vloutrasdesp, 0) +
+                                        nvl(pcpedi.vlfrete, 0)) *
+                                        NVL(PCPEDI.QT, 0),
+                                        12,
+                                        (NVL(PCPEDI.pvenda, 0) +
+                                        nvl(pcpedi.vloutrasdesp, 0) +
+                                        nvl(pcpedi.vlfrete, 0)) *
+                                        NVL(PCPEDI.QT, 0),
+                                        0),
+                                 2)) VLBONIF,
+                       0 VLLUCRO,
+                       SUM(ROUND(DECODE(PCPEDC.CONDVENDA,
+                                        5,
+                                        0,
+                                        6,
+                                        0,
+                                        11,
+                                        0,
+                                        12,
+                                        0,
+                                        1,
+                                        DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                               'F',
+                                               0,
+                                               (NVL(PCPEDI.pvenda, 0) +
+                                               nvl(pcpedi.vloutrasdesp, 0) +
+                                               nvl(pcpedi.vlfrete, 0)) *
+                                               NVL(PCPEDI.QT, 0)),
+                                        14,
+                                        DECODE(NVL(PCPEDI.BONIFIC, 'X'),
+                                               'F',
+                                               0,
+                                               (NVL(PCPEDI.pvenda, 0) +
+                                               nvl(pcpedi.vloutrasdesp, 0) +
+                                               nvl(pcpedi.vlfrete, 0)) *
+                                               NVL(PCPEDI.QT, 0)),
+                                        (NVL(PCPEDI.pvenda, 0) +
+                                        nvl(pcpedi.vloutrasdesp, 0) +
+                                        nvl(pcpedi.vlfrete, 0)) *
+                                        NVL(PCPEDI.QT, 0)),
+                                 2) * NVL(PCPEDC.PRAZOMEDIO, 0)) AS NUMDIAS,
+                       SUM(ROUND(NVL(PCPEDI.VLCUSTOFIN, 0) *
+                                 NVL(PCPEDI.QT, 0),
+                                 2)) VLCUSTOFIN,
+                       NVL(MAX((SELECT SUM(VLDEVOLUCAO)
+                                 FROM PCESTCOM, PCNFENT
+                                WHERE CODUSUR = PCPEDC.CODUSUR
+                                  AND PCESTCOM.NUMTRANSENT =
+                                      PCNFENT.NUMTRANSENT
+                                  AND PCNFENT.CODFILIAL = 1
+                                  AND DTESTORNO BETWEEN &DTINI AND &DTFIM)),
+                           0) AS VLDEVOLUCAO
+                  FROM PCPEDI,
+                       PCPEDC,
+                       PCPRODUT,
+                       PCFORNEC,
+                       PCDEPTO,
+                       PCCLIENT,
+                       PCUSUARI,
+                       PCATIVI,
+                       PCPRACA,
+                       PCCIDADE
+                 WHERE PCPEDI.NUMPED = PCPEDC.NUMPED
+                   AND PCCLIENT.CODCIDADE = PCCIDADE.CODCIDADE(+)
+                   AND PCPEDC.CODCLI = PCCLIENT.CODCLI
+                   AND PCCLIENT.CODATV1 = PCATIVI.CODATIV(+)
+                   AND PCPEDC.DTCANCEL IS NULL
+                   AND PCPEDI.CODPROD = PCPRODUT.CODPROD
+                   AND PCPRODUT.CODEPTO = PCDEPTO.CODEPTO
+                   AND PCPRODUT.CODFORNEC = PCFORNEC.CODFORNEC
+                   AND PCPEDC.CODUSUR = PCUSUARI.CODUSUR
+                   AND PCPEDC.CODPRACA = PCPRACA.CODPRACA(+)
+                   AND PCPEDC.DATA BETWEEN &DTINI AND &DTFIM
+                   AND PCPEDC.CODSUPERVISOR IN (&CODSUPERVISOR)
+                   AND PCPEDC.CONDVENDA NOT IN (4, 8, 10, 13, 20, 98, 99)
+                   AND PCPEDC.CODCLI = PCCLIENT.CODCLI
+                   AND PCPEDC.CODFILIAL = 1
+                 GROUP BY PCPEDC.CODUSUR, PCPEDC.CODSUPERVISOR) VENDAS,
+               (SELECT PCMETARCA.CODUSUR,
+                       M.CODSUPERVISOR,
+                       SUM(NVL(PCMETARCA.VLVENDAPREV, 0)) VLMETA
+                  FROM PCMETARCA, PCUSUARI M
+                 WHERE PCMETARCA.CODUSUR = M.CODUSUR
+                   AND PCMETARCA.DATA BETWEEN &DTINI AND &DTFIM
+                   AND PCMETARCA.CODFILIAL = 1
+                 GROUP BY PCMETARCA.CODUSUR, M.CODSUPERVISOR) METAS
+         WHERE U.CODUSUR = VENDAS.CODUSUR(+)
+           AND U.CODUSUR = METAS.CODUSUR(+)
+           AND VENDAS.CODSUPERVISOR IN (&CODSUPERVISOR)
+           AND NVL(VENDAS.VLVENDA, 0) + NVL(VENDAS.VLBONIF, 0) +
+               NVL(VENDAS.VLDEVOLUCAO, 0) + NVL(METAS.VLMETA, 0) > 0) CONSULTA
+ WHERE PCUSUARI.CODUSUR = CONSULTA.CODUSUR
+   AND PCUSUARI.CODUSUR = CLI_CADASTRADOS.CODUSUR(+)
+   AND PCUSUARI.CODUSUR = CLI_ATIVOS.CODUSUR(+)
+   AND PCUSUARI.CODUSUR = TOTAIS_VENDAS.CODUSUR(+)
+   AND (PCUSUARI.CODSUPERVISOR IN (&CODSUPERVISOR) OR
+       (NVL(CONSULTA.VLVENDA, 0) + NVL(CONSULTA.VLBONIF, 0) +
+       NVL(CONSULTA.VLDEVOLUCAO, 0) + NVL(CONSULTA.VLMETA, 0)) > 0)
+   AND NVL(CONSULTA.VLVENDA, 0) + NVL(CONSULTA.VLBONIF, 0) +
+       NVL(CONSULTA.VLDEVOLUCAO, 0) + NVL(CONSULTA.VLMETA, 0) > 0
+ GROUP BY PCUSUARI.CODUSUR,
+          PCUSUARI.NOME,
+          CLI_CADASTRADOS.QT,
+          CLI_ATIVOS.QT,
+          TOTAIS_VENDAS.QTPED,
+          TOTAIS_VENDAS.QTCLI,
+          TOTAIS_VENDAS.QTPROD,
+          TOTAIS_VENDAS.QTPRODN,
+          TOTAIS_VENDAS.TOTQTPROD
+ ORDER BY CODUSUR
