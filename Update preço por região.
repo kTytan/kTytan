@@ -1,0 +1,48 @@
+BEGIN
+  FOR TABELA_PRECOS IN (SELECT PCPRODUT.CODPROD,
+                               &REGIAODEST NUMREGIAO,
+                               PCCONSUM.MARGEMPREV,
+                               NVL(TABORIG.PTABELA, 0) PTABELA,
+                               NVL(TABORIG.PTABELAATAC, 0) PTABELAATAC,
+                               &MATRICULA MATRICULA,
+                               &ROTINA ROTINA,
+                               DECODE(TABDEST.NUMREGIAO, NULL, 0, 1) EXISTE
+                          FROM PCPRODUT,
+                               PCCONSUM,
+                               PCTABPR  TABORIG,
+                               PCTABPR  TABDEST
+                         WHERE TABORIG.CODPROD = PCPRODUT.CODPROD
+                           AND TABORIG.NUMREGIAO = &REGIAOORIG
+                           AND PCPRODUT.CODPROD = TABDEST.CODPROD(+)
+                           AND &REGIAODEST = TABDEST.NUMREGIAO(+)
+                           AND PCPRODUT.CODPROD IN (:CODPROD)
+                        ) LOOP
+    IF (TABELA_PRECOS.EXISTE = 0) THEN
+      INSERT INTO PCTABPR
+        (CODPROD,
+         NUMREGIAO,
+         MARGEM,
+         PTABELA,
+         PTABELAATAC,
+         MATRICULA,
+         ROTINA)
+      VALUES
+        (TABELA_PRECOS.CODPROD,
+         TABELA_PRECOS.NUMREGIAO,
+         TABELA_PRECOS.MARGEMPREV,
+         TABELA_PRECOS.PTABELA,
+         TABELA_PRECOS.PTABELAATAC,
+         TABELA_PRECOS.MATRICULA,
+         TABELA_PRECOS.ROTINA);
+    ELSE
+      UPDATE PCTABPR
+         SET PTABELA     = TABELA_PRECOS.PTABELA,
+             PTABELAATAC = TABELA_PRECOS.PTABELAATAC,
+             MARGEM      = TABELA_PRECOS.MARGEMPREV,
+             MATRICULA   = TABELA_PRECOS.MATRICULA,
+             ROTINA      = TABELA_PRECOS.ROTINA
+       WHERE PCTABPR.NUMREGIAO = TABELA_PRECOS.NUMREGIAO
+         AND PCTABPR.CODPROD = TABELA_PRECOS.CODPROD;
+    END IF;
+  END LOOP;
+END;
